@@ -1,0 +1,105 @@
+---
+title: "101Cproject"
+author: "Jinyoung Hwang"
+date: "2023-08-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(rpart)
+library(purrr)
+library(dplyr)
+
+```
+
+## Data prep
+
+```{r}
+test <- read.csv("test.csv")
+train <- read.csv("train.csv")
+
+cleaned_train <- train %>% 
+  na.omit() %>% # We can delete na or replace it with mean using step_impute_mean()
+  select(-name, -id)
+```
+
+## candidate models 
+We can add more candidate models here. 
+
+```{r}
+set.seed(101)
+
+#Linear model with all predictors
+basic_rec <- 
+  recipe(percent_dem ~ ., data = cleaned_train)
+
+#Linear model with statistically significant predictors
+signif_rec <- 
+  recipe(percent_dem ~ x0059e+x0061e +x0065e + x0066e +x0072e+ x0073e + x0074e + x0079e+ x0082e +
+           x0086e + c01_004e +c01_010e +c01_011e + c01_012e  +c01_018e +c01_023e + c01_024e +
+           income_per_cap_2017 + income_per_cap_2018 +income_per_cap_2020 + x2013_code , data = cleaned_train)
+
+#combine linear models
+preproc <- 
+  list(basic = basic_rec,
+       signification=signif_rec)
+
+lm_models <- workflow_set(preproc = preproc,
+                          models = list(lm = linear_reg()),
+                          cross = FALSE)
+
+#Random forest model with all predictors
+rf_model <- 
+  rand_forest() %>%
+  set_mode("regression") %>%
+  set_engine("ranger")
+
+rf_wflow <-
+  workflow() %>%
+  add_model(rf_model) %>%
+  add_formula(percent_dem ~ .)
+
+```
+
+## Model Validation using CV
+
+```{r}
+
+#v-fold cross-validation
+vote_folds <- vfold_cv(cleaned_train, v=10) 
+keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
+
+#Linear models
+lm_res <-
+  lm_models %>%
+  workflow_map("fit_resamples",
+               seed = 1101, verbose = TRUE,
+               resamples = vote_folds, control = keep_pred)
+
+#Random forest model
+rf_res <-
+  rf_wflow %>%
+  fit_resamples(resamples = vote_folds, control = keep_pred)
+
+```
+
+## Comparing models
+
+```{r}
+#combine candidate models
+four_models <-
+  as_workflow_set(random_forest = rf_res) %>%
+  bind_rows(lm_res)
+
+#Show performance of all models
+collect_metrics(four_models)
+
+autoplot(four_models) # The performance of the Random Forest model is the best(lowest rmse)
+```
