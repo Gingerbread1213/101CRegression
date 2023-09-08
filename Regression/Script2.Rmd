@@ -1,0 +1,196 @@
+---
+title: "Script"
+author: "Haojie Liu"
+date: "2023-08-24"
+output: pdf_document
+---
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(rpart)
+```
+
+
+```{r}
+test <- read.csv("test.csv")
+train <- read.csv("train.csv")
+```
+
+
+```{r}
+
+cleaned_train <- train %>% 
+  select(-name)
+
+cleaned_train
+```
+
+```{r}
+
+set.seed(101)
+
+
+rf_model <- rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("regression")
+
+rf_wf <- workflow() %>% 
+  add_model(rf_model) %>% 
+  add_formula(percent_dem ~ .)
+
+rf_fit <- rf_wf %>%
+  fit(data = cleaned_train)
+
+
+```
+
+```{r}
+
+rf_train_res <- rf_fit %>%
+  predict(test)
+
+rf_result <- rf_train_res %>% 
+  mutate(percent = cleaned_train$percent_dem)
+
+rf_train_res %>% 
+  mutate(percent = cleaned_train$percent_dem) %>% 
+  summarise(mean((.pred-percent)^2))
+
+rf_test_res <- rf_fit %>% 
+  predict(test)
+
+rf_test_res
+
+ggplot(rf_result, aes(x = percent, y = .pred)) +
+  geom_point(alpha = 0.5) + 
+  geom_abline(color = 'blue', linetype = 2)
+
+```
+```{r}
+
+df <- train %>% 
+  select(-name) %>% 
+  na.omit()
+
+data.frame(cor(df)[,2]) %>% 
+  mutate(cor = abs(cor.df....2.)) %>% 
+  arrange(desc(cor))
+```
+
+
+##############################################
+
+```{r}
+
+rf_recipe_improve <- recipe(percent_dem ~ ., data = cleaned_train) %>% 
+  step_corr(all_numeric(), threshold = 0.85) %>% 
+  step_impute_knn(all_predictors())
+
+rf_model_improve <- rand_forest(
+  trees = tune(),
+  min_n = tune()) %>% 
+  set_engine("ranger") %>% 
+  set_mode("regression")
+
+rf_workflow_improve <- workflow() %>% 
+  add_model(rf_model_improve) %>% 
+  add_recipe(rf_recipe_improve)
+  
+train_folds <- vfold_cv(cleaned_train, v=5, strata = 'percent_dem')
+
+param_grid <- expand.grid(
+  trees = c(seq(1000, 8000), seq(21, 100, 4)),
+  min_n = c(seq(1, 20), seq(21, 100, 4))
+)
+
+rf_tune <- rf_workflow_improve %>%
+  tune_grid(resamples = train_folds, grid = param_grid)
+
+autoplot(rf_tune)
+
+show_best(rf_tune)
+
+best_rf <- select_best(rf_tune, "mse")
+```
+
+
+```{r}
+
+
+
+rf_crossval_fit <- rf_workflow_improve %>% 
+  fit_resamples(resamples = train_folds)
+
+rf_fit <- rf_workflow_improve %>%
+  fit(train)
+
+rf_fit %>%
+  predict(test)
+```
+
+```{r}
+
+rf_crossval_fit %>% 
+  collect_metrics()
+
+```
+
+
+
+##############################################
+
+```{r}
+
+library(xgboost)
+
+boost_recipe_improve <- recipe(percent_dem ~ ., data = cleaned_train) %>% 
+  step_corr(all_numeric(), threshold = 0.85) %>% 
+  step_impute_knn(all_predictors())
+
+boost_model_improve <- boost_tree(
+  trees = 1891,
+  tree_depth = 7,
+  learn_rate = 0.01,
+  loss_reduction = 2.78e-9,
+  sample_size = 0.264
+  ) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression")
+
+boost_workflow_improve <- workflow() %>% 
+  add_model(boost_model_improve) %>% 
+  add_recipe(boost_recipe)
+  
+ef <- boost_workflow_improve %>% 
+  fit(train)
+
+result <- ef %>% 
+  predict(test) %>% 
+  bind_cols(id = test$id)
+
+
+
+
+```
+
+
+```{r}
+
+boost_crossval_fit <- boost_workflow_improve %>% 
+  fit_resamples(resamples = train_folds)
+
+```
+
+```{r}
+
+boost_crossval_fit %>% 
+  collect_metrics()
+
+```
+
+
+
+
+
+

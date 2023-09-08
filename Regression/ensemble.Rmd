@@ -1,0 +1,481 @@
+---
+title: "Ensemble"
+author: "Haojie Liu"
+date: "2023-09-06"
+output: pdf_document
+---
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(rpart)
+library(xgboost)
+
+poly_tune <- readRDS("poly_svm_tune.rds")
+xgboost_tune <- readRDS("boost_tune.rds")
+rf_tune <- readRDS("rf_tune.rds")
+
+poly_tune %>% 
+  show_best() %>% 
+  head(n=1)
+
+xgboost_tune %>% 
+  show_best() %>% 
+  head(n=1)
+
+rf_tune %>% 
+  show_best() %>% 
+  head(n=1)
+
+
+
+train <- read_csv("train.csv")
+test <- read_csv("test.csv")
+```
+
+
+```{r}
+
+poly_model <- svm_poly(
+  cost = 0.08630027,
+  degree = 2,
+  scale_factor = 0.01268114,
+  margin = 0.1418384
+) %>% 
+  set_engine("kernlab") %>% 
+  set_mode("regression")
+
+```
+
+
+
+Recipe1
+```{r}
+
+cleaned_train <- train %>% 
+  select(-name)
+
+recipe_1 <- recipe(percent_dem ~ ., data = cleaned_train) %>%
+  # drop variable id
+  step_rm(id) %>%
+  
+  step_impute_mean(income_per_cap_2016, income_per_cap_2017, 
+                   income_per_cap_2018, income_per_cap_2019, 
+                   income_per_cap_2020, gdp_2016, gdp_2017, 
+                   gdp_2018, gdp_2019, gdp_2020) %>%
+  
+  # drop duplicate variable
+  step_rm(x0033e, x0036e, x0058e, x0025e, x0029e) %>%
+  
+  step_mutate(x0002e = replace_na(x0002e / x0001e, 0),
+              x0003e = replace_na(x0003e / x0001e, 0)) %>%
+  
+  # drop redundant variable
+  step_rm(x0005e, x0006e, x0007e, x0008e, x0009e,
+          x0010e, x0011e, x0012e, x0013e, x0014e,
+          x0015e, x0016e, x0017e) %>%
+  
+  step_mutate(x0026e = replace_na(x0026e / x0021e, 0), 
+              x0027e = replace_na(x0027e / x0021e, 0)) %>%
+  
+  step_mutate(x0030e = replace_na(x0030e / x0024e, 0), 
+              x0031e = replace_na(x0031e / x0024e, 0)) %>%
+  
+  step_mutate(x0019e = replace_na(x0019e / x0001e, 0),
+              x0020e = replace_na(x0020e / x0001e, 0),
+              x0021e = replace_na(x0021e / x0001e, 0),
+              x0022e = replace_na(x0022e / x0001e, 0),
+              x0023e = replace_na(x0023e / x0001e, 0),
+              x0024e = replace_na(x0024e / x0001e, 0)) %>%
+  
+  step_mutate(x0040e = replace_na(x0040e / x0039e, 0),
+              x0041e = replace_na(x0041e / x0039e, 0),
+              x0042e = replace_na(x0042e / x0039e, 0),
+              x0043e = replace_na(x0043e / x0039e, 0)) %>%
+  
+  step_mutate(x0045e = replace_na(x0045e / x0044e, 0),
+              x0046e = replace_na(x0046e / x0044e, 0),
+              x0047e = replace_na(x0047e / x0044e, 0),
+              x0048e = replace_na(x0048e / x0044e, 0),
+              x0049e = replace_na(x0049e / x0044e, 0),
+              x0050e = replace_na(x0050e / x0044e, 0),
+              x0051e = replace_na(x0051e / x0044e, 0)) %>%
+  
+  step_mutate(x0053e = replace_na(x0053e / x0052e, 0),
+              x0054e = replace_na(x0054e / x0052e, 0),
+              x0055e = replace_na(x0055e / x0052e, 0),
+              x0056e = replace_na(x0056e / x0052e, 0)) %>%
+  
+  step_mutate(x0037e = replace_na(x0037e / x0034e, 0),
+              x0038e = replace_na(x0038e / x0034e, 0),
+              x0039e = replace_na(x0039e / x0034e, 0),
+              x0044e = replace_na(x0044e / x0034e, 0),
+              x0052e = replace_na(x0052e / x0034e, 0),
+              x0057e = replace_na(x0057e / x0034e, 0)) %>%
+  
+  step_mutate(x0059e = replace_na(x0059e / x0035e, 0),
+              x0060e = replace_na(x0060e / x0035e, 0),
+              x0061e = replace_na(x0061e / x0035e, 0),
+              x0062e = replace_na(x0062e / x0035e, 0)) %>%
+  
+  step_mutate(x0034e = replace_na(x0034e / x0001e, 0),
+              x0035e = replace_na(x0035e / x0001e, 0)) %>%
+  
+  step_mutate(x0064e = replace_na(x0064e / x0001e, 0),
+              x0065e = replace_na(x0065e / x0001e, 0),
+              x0066e = replace_na(x0066e / x0001e, 0),
+              x0067e = replace_na(x0067e / x0001e, 0),
+              x0068e = replace_na(x0068e / x0001e, 0),
+              x0069e = replace_na(x0069e / x0001e, 0)) %>%
+  
+  step_mutate(x0072e = replace_na(x0072e / x0071e, 0),
+              x0073e = replace_na(x0073e / x0071e, 0),
+              x0074e = replace_na(x0074e / x0071e, 0),
+              x0075e = replace_na(x0075e / x0071e, 0)) %>%
+  
+  step_mutate(x0084e = replace_na(x0084e / x0083e, 0), 
+              x0085e = replace_na(x0085e / x0083e, 0)) %>%
+  
+  step_mutate(x0077e = replace_na(x0077e / x0076e, 0),
+              x0078e = replace_na(x0078e / x0076e, 0),
+              x0079e = replace_na(x0079e / x0076e, 0),
+              x0080e = replace_na(x0080e / x0076e, 0),
+              x0081e = replace_na(x0081e / x0076e, 0),
+              x0082e = replace_na(x0082e / x0076e, 0),
+              x0083e = replace_na(x0083e / x0076e, 0)) %>%
+  
+  step_mutate(x0071e = replace_na(x0071e / x0001e, 0),
+              x0076e = replace_na(x0076e / x0001e, 0)) %>%
+  
+  step_mutate(x0088e = replace_na(x0088e / x0087e, 0),
+              x0089e = replace_na(x0089e / x0087e, 0)) %>%
+  
+  step_mutate(c01_002e = replace_na(c01_002e / c01_001e, 0),
+              c01_003e = replace_na(c01_003e / c01_001e, 0),
+              c01_004e = replace_na(c01_004e / c01_001e, 0),
+              c01_005e = replace_na(c01_005e / c01_001e, 0)) %>%
+  
+  step_mutate(c01_007e = replace_na(c01_007e / c01_006e, 0),
+              c01_008e = replace_na(c01_008e / c01_006e, 0),
+              c01_009e = replace_na(c01_009e / c01_006e, 0),
+              c01_010e = replace_na(c01_010e / c01_006e, 0),
+              c01_011e = replace_na(c01_011e / c01_006e, 0),
+              c01_012e = replace_na(c01_012e / c01_006e, 0),
+              c01_013e = replace_na(c01_013e / c01_006e, 0),
+              c01_014e = replace_na(c01_014e / c01_006e, 0),
+              c01_015e = replace_na(c01_015e / c01_006e, 0)) %>%
+  
+  step_mutate(c01_017e = replace_na(c01_017e / c01_016e, 0),
+              c01_018e = replace_na(c01_018e / c01_016e, 0)) %>%
+  
+  step_mutate(c01_020e = replace_na(c01_020e / c01_019e, 0),
+              c01_021e = replace_na(c01_021e / c01_019e, 0)) %>%
+  
+  step_mutate(c01_023e = replace_na(c01_023e / c01_022e, 0),
+              c01_024e = replace_na(c01_024e / c01_022e, 0)) %>%
+  
+  step_mutate(c01_026e = replace_na(c01_026e / c01_026e, 0),
+              c01_027e = replace_na(c01_027e / c01_026e, 0)) %>%
+  
+  step_mutate(c01_001e = replace_na(c01_001e / x0001e, 0),
+              c01_006e = replace_na(c01_001e / x0001e, 0),
+              c01_016e = replace_na(c01_001e / x0001e, 0),
+              c01_019e = replace_na(c01_001e / x0001e, 0),
+              c01_022e = replace_na(c01_001e / x0001e, 0),
+              c01_025e = replace_na(c01_001e / x0001e, 0)) %>%
+  
+  step_zv(all_predictors())
+```
+
+Recipe 2
+```{r}
+
+recipe_2 <- recipe(percent_dem ~ ., data = cleaned_train) %>%
+  step_rm(id) %>% 
+  
+  # 4. Handle missing values - impute missing values with median for numeric variables and mode for categorical variables
+  step_impute_median(all_numeric(), -all_outcomes()) %>%
+  
+  # 5. Convert categorical variables to numeric variables 
+  # Assuming 'x2013_code' is a categorical variable, we convert it to a dummy variable
+  
+  # 6. Scale the features 
+  # Here, we are scaling all numeric predictors
+  step_center(all_numeric(), -all_outcomes()) %>%
+  step_scale(all_numeric(), -all_outcomes())
+
+```
+
+
+Recipe 3
+```{r}
+
+
+recipe_3 <- recipe(percent_dem ~ ., data = cleaned_train) %>%
+  # drop variable id
+  step_rm(id) %>%
+  
+step_impute_linear(income_per_cap_2016, income_per_cap_2017, 
+                   income_per_cap_2018, income_per_cap_2019, 
+                   income_per_cap_2020, gdp_2016, gdp_2017, 
+                   gdp_2018, gdp_2019, gdp_2020,
+                   impute_with = imp_vars(x0001e, x2013_code)) %>% 
+  
+  # drop duplicate variable
+  step_rm(x0033e, x0036e, x0058e, x0025e, x0029e) %>%
+  
+  step_mutate(x0002e = replace_na(x0002e / x0001e, 0),
+              x0003e = replace_na(x0003e / x0001e, 0)) %>%
+  
+  # drop redundant variable
+  step_rm(x0005e, x0006e, x0007e, x0008e, x0009e,
+          x0010e, x0011e, x0012e, x0013e, x0014e,
+          x0015e, x0016e, x0017e) %>%
+  
+  step_mutate(x0026e = replace_na(x0026e / x0021e, 0), 
+              x0027e = replace_na(x0027e / x0021e, 0)) %>%
+  
+  step_mutate(x0030e = replace_na(x0030e / x0024e, 0), 
+              x0031e = replace_na(x0031e / x0024e, 0)) %>%
+  
+  step_mutate(x0019e = replace_na(x0019e / x0001e, 0),
+              x0020e = replace_na(x0020e / x0001e, 0),
+              x0021e = replace_na(x0021e / x0001e, 0),
+              x0022e = replace_na(x0022e / x0001e, 0),
+              x0023e = replace_na(x0023e / x0001e, 0),
+              x0024e = replace_na(x0024e / x0001e, 0)) %>%
+  
+  step_mutate(x0040e = replace_na(x0040e / x0039e, 0),
+              x0041e = replace_na(x0041e / x0039e, 0),
+              x0042e = replace_na(x0042e / x0039e, 0),
+              x0043e = replace_na(x0043e / x0039e, 0)) %>%
+  
+  step_mutate(x0045e = replace_na(x0045e / x0044e, 0),
+              x0046e = replace_na(x0046e / x0044e, 0),
+              x0047e = replace_na(x0047e / x0044e, 0),
+              x0048e = replace_na(x0048e / x0044e, 0),
+              x0049e = replace_na(x0049e / x0044e, 0),
+              x0050e = replace_na(x0050e / x0044e, 0),
+              x0051e = replace_na(x0051e / x0044e, 0)) %>%
+  
+  step_mutate(x0053e = replace_na(x0053e / x0052e, 0),
+              x0054e = replace_na(x0054e / x0052e, 0),
+              x0055e = replace_na(x0055e / x0052e, 0),
+              x0056e = replace_na(x0056e / x0052e, 0)) %>%
+  
+  step_mutate(x0037e = replace_na(x0037e / x0034e, 0),
+              x0038e = replace_na(x0038e / x0034e, 0),
+              x0039e = replace_na(x0039e / x0034e, 0),
+              x0044e = replace_na(x0044e / x0034e, 0),
+              x0052e = replace_na(x0052e / x0034e, 0),
+              x0057e = replace_na(x0057e / x0034e, 0)) %>%
+  
+  step_mutate(x0059e = replace_na(x0059e / x0035e, 0),
+              x0060e = replace_na(x0060e / x0035e, 0),
+              x0061e = replace_na(x0061e / x0035e, 0),
+              x0062e = replace_na(x0062e / x0035e, 0)) %>%
+  
+  step_mutate(x0034e = replace_na(x0034e / x0001e, 0),
+              x0035e = replace_na(x0035e / x0001e, 0)) %>%
+  
+  step_mutate(x0064e = replace_na(x0064e / x0001e, 0),
+              x0065e = replace_na(x0065e / x0001e, 0),
+              x0066e = replace_na(x0066e / x0001e, 0),
+              x0067e = replace_na(x0067e / x0001e, 0),
+              x0068e = replace_na(x0068e / x0001e, 0),
+              x0069e = replace_na(x0069e / x0001e, 0)) %>%
+  
+  step_mutate(x0072e = replace_na(x0072e / x0071e, 0),
+              x0073e = replace_na(x0073e / x0071e, 0),
+              x0074e = replace_na(x0074e / x0071e, 0),
+              x0075e = replace_na(x0075e / x0071e, 0)) %>%
+  
+  step_mutate(x0084e = replace_na(x0084e / x0083e, 0), 
+              x0085e = replace_na(x0085e / x0083e, 0)) %>%
+  
+  step_mutate(x0077e = replace_na(x0077e / x0076e, 0),
+              x0078e = replace_na(x0078e / x0076e, 0),
+              x0079e = replace_na(x0079e / x0076e, 0),
+              x0080e = replace_na(x0080e / x0076e, 0),
+              x0081e = replace_na(x0081e / x0076e, 0),
+              x0082e = replace_na(x0082e / x0076e, 0),
+              x0083e = replace_na(x0083e / x0076e, 0)) %>%
+  
+  step_mutate(x0071e = replace_na(x0071e / x0001e, 0),
+              x0076e = replace_na(x0076e / x0001e, 0)) %>%
+  
+  step_mutate(x0088e = replace_na(x0088e / x0087e, 0),
+              x0089e = replace_na(x0089e / x0087e, 0)) %>%
+  
+  step_mutate(c01_002e = replace_na(c01_002e / c01_001e, 0),
+              c01_003e = replace_na(c01_003e / c01_001e, 0),
+              c01_004e = replace_na(c01_004e / c01_001e, 0),
+              c01_005e = replace_na(c01_005e / c01_001e, 0)) %>%
+  
+  step_mutate(c01_007e = replace_na(c01_007e / c01_006e, 0),
+              c01_008e = replace_na(c01_008e / c01_006e, 0),
+              c01_009e = replace_na(c01_009e / c01_006e, 0),
+              c01_010e = replace_na(c01_010e / c01_006e, 0),
+              c01_011e = replace_na(c01_011e / c01_006e, 0),
+              c01_012e = replace_na(c01_012e / c01_006e, 0),
+              c01_013e = replace_na(c01_013e / c01_006e, 0),
+              c01_014e = replace_na(c01_014e / c01_006e, 0),
+              c01_015e = replace_na(c01_015e / c01_006e, 0)) %>%
+  
+  step_mutate(c01_017e = replace_na(c01_017e / c01_016e, 0),
+              c01_018e = replace_na(c01_018e / c01_016e, 0)) %>%
+  
+  step_mutate(c01_020e = replace_na(c01_020e / c01_019e, 0),
+              c01_021e = replace_na(c01_021e / c01_019e, 0)) %>%
+  
+  step_mutate(c01_023e = replace_na(c01_023e / c01_022e, 0),
+              c01_024e = replace_na(c01_024e / c01_022e, 0)) %>%
+  
+  step_mutate(c01_026e = replace_na(c01_026e / c01_026e, 0),
+              c01_027e = replace_na(c01_027e / c01_026e, 0)) %>%
+  
+  step_mutate(c01_001e = replace_na(c01_001e / x0001e, 0),
+              c01_006e = replace_na(c01_001e / x0001e, 0),
+              c01_016e = replace_na(c01_001e / x0001e, 0),
+              c01_019e = replace_na(c01_001e / x0001e, 0),
+              c01_022e = replace_na(c01_001e / x0001e, 0),
+              c01_025e = replace_na(c01_001e / x0001e, 0)) %>%
+  
+  step_zv(all_predictors())
+
+```
+
+
+
+xgboost model
+
+```{r}
+
+library(stacks)
+
+boost_model <- boost_tree(
+  trees = 1891,
+  tree_depth = 7,
+  learn_rate = 0.01,
+  loss_reduction = 2.78e-9,
+  sample_size = 0.264
+  ) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression")
+
+boost_workflow_1 <- workflow() %>%
+  add_model(boost_model) %>%
+  add_recipe(recipe_1)
+
+boost_workflow_2 <- workflow() %>%
+  add_model(boost_model) %>%
+  add_recipe(recipe_2)
+
+boost_workflow_3 <- workflow() %>%
+  add_model(boost_model) %>%
+  add_recipe(recipe_3)
+
+
+train_folds <- vfold_cv(cleaned_train, v=5, strata = 'percent_dem')
+
+boost_fit_1 <- fit_resamples(boost_workflow_1, resamples = train_folds)
+boost_fit_2 <- fit_resamples(boost_workflow_2, resamples = train_folds)
+boost_fit_3 <- fit_resamples(boost_workflow_3, resamples = train_folds)
+
+stack <- stacks() %>%
+  add_candidates(boost_fit_1)
+
+control_stacks()
+
+
+stack <- stack %>%
+  blend()
+
+stack %>% collect_metrics()
+```
+
+
+
+meta_model
+
+```{r}
+
+meta_model <- linear_reg() %>%
+  set_engine("lm") %>%
+  set_mode("regression")
+
+meta_recipe <- recipe(percent_dem ~ ., data = bind_cols(val_targets, val_predictions)) %>% 
+  step_rm(id)
+
+meta_model_workflow <- workflow() %>% 
+  add_model(meta_model) %>% 
+  add_recipe(meta_recipe)
+
+```
+
+
+cross validation
+
+```{r}
+train_folds <- vfold_cv(bind_cols(val_targets, val_predictions), v=5, strata = 'percent_dem')
+
+meta_crossval_fit <- meta_model_workflow %>% 
+  fit_resamples(resamples = train_folds)
+
+meta_crossval_fit %>% 
+  collect_metrics()
+```
+
+
+```{r}
+
+
+boost_val_predict <- boost_workflow_fit %>% predict(test)
+rf_val_predict <- rf_workflow_fit %>% predict(test)
+poly_predict <- poly_workflow_fit %>% predict(test)
+
+test_predictions <- test %>%
+  select(id) %>%
+  mutate(
+    boost_pred = boost_val_predict$.pred,
+    rf_pred = rf_val_predict$.pred,
+    poly_pred = poly_predict$.pred
+  )
+
+
+final_predictions <- meta_model_fit %>%
+  predict(new_data = test_predictions)
+
+
+true_result <- read_csv("try_result.csv")
+
+final_predictions %>% 
+  mutate(true_result$.pred) %>% 
+  summarise(sum((true_result$.pred-.pred)^2)/780)
+
+
+
+```
+```{r}
+
+df <- 
+  train %>% 
+  na.omit() %>% 
+  select(-name)
+
+
+ok <- data.frame(cor(df))
+ok %>% 
+  select(income_per_cap_2017) %>% 
+  arrange(by = abs(income_per_cap_2017),desc=TRUE)
+```
+
+
+
+
+
+
+
+
+
+
