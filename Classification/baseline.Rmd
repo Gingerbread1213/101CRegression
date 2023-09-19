@@ -1,0 +1,405 @@
+# Import Library
+
+```{r}
+library(dplyr)
+library(tidymodels)
+library(tidyverse)
+library(rpart)
+library(xgboost)
+library(glmnet)
+library(LiblineaR)
+library(kernlab)
+library(kknn)
+```
+
+
+# Load Data
+```{r}
+set.seed(666666)
+
+test <- read.csv("test2.csv")
+train <- read.csv("train2.csv")
+
+cleaned_train <- train %>%
+  mutate(action_taken = factor(action_taken))
+
+train_folds <- vfold_cv(cleaned_train, v=2, strata = 'action_taken')
+```
+
+# Create Recipe 1
+```{r}
+recipe <- recipe(action_taken ~ ., data = cleaned_train) %>%
+  # step_novel(age_of_applicant_or_borrower) %>%
+  
+  step_rm(id) %>%
+  
+  step_rm(legal_entity_identifier_lei) %>%
+  
+  # unique(test$activity_year)  unique(train$activity_year) 2018
+  step_rm(activity_year) %>%
+  
+  step_mutate(loan_purpose = factor(loan_purpose, levels = c("1", "2", "31", "32", "4", "5"))) %>%
+  
+  # unique(train$preapproval) unique(test$preapproval)  2
+  step_rm(preapproval) %>%
+  
+  # contain NA value impossible to impute
+  step_rm(state) %>%
+  
+  step_mutate(ethnicity_of_applicant_or_borrower_1 = factor(ethnicity_of_applicant_or_borrower_1, levels = c("1", "11", "12", "13", "14", "2", "3", "4"))) %>%
+    
+  step_mutate(ethnicity_of_co_applicant_or_co_borrower_1 = factor(ethnicity_of_co_applicant_or_co_borrower_1, levels = c("1", "11", "12", "13", "14", "2", "3", "4"))) %>%
+
+  # impute nominal variable by most common values
+  step_impute_mode(ethnicity_of_applicant_or_borrower_1, ethnicity_of_co_applicant_or_co_borrower_1) %>%
+  
+  step_rm(ethnicity_of_applicant_or_borrower_2) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_3) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_4) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_5) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_2) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_3) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_4) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_5) %>%
+  
+  step_mutate(race_of_applicant_or_borrower_1 = factor(race_of_applicant_or_borrower_1, levels = c("1", "2", "21", "22", "23", "24", "25", "26", "27", "3", "4", "41", "42", "43", "44", "5", "6", "7"))) %>%
+  
+  step_mutate(race_of_co_applicant_or_co_borrower_1 = factor(race_of_co_applicant_or_co_borrower_1, levels = c("1", "2", "21", "22", "23", "24", "25", "26", "27", "3", "4", "41", "42", "43", "44", "5", "6", "7"))) %>%
+  
+  step_impute_mode(race_of_applicant_or_borrower_1, race_of_co_applicant_or_co_borrower_1) %>%
+  
+  step_rm(race_of_applicant_or_borrower_2, race_of_applicant_or_borrower_3,
+          race_of_applicant_or_borrower_4, race_of_applicant_or_borrower_5,
+          race_of_co_applicant_or_co_borrower_2, race_of_co_applicant_or_co_borrower_3,
+          race_of_co_applicant_or_co_borrower_4, race_of_co_applicant_or_co_borrower_5) %>%
+  
+  step_impute_mode(age_of_applicant_62, age_of_co_applicant_62) %>%
+  
+  step_impute_mean(income) %>%
+  
+  step_rm(total_points_and_fees, prepayment_penalty_term) %>%
+  
+  step_impute_mean(combined_loan_to_value_ratio, loan_term) %>%
+  
+  step_rm(introductory_rate_period) %>%
+  
+  step_impute_mean(property_value) %>%
+  
+  step_rm(multifamily_affordable_units) %>%
+  
+  # too many NA values
+  step_rm(automated_underwriting_system_2, automated_underwriting_system_3,
+          automated_underwriting_system_4, automated_underwriting_system_5)
+```
+
+# Create Recipe 2
+```{r}
+recipe <- recipe(action_taken ~ ., data = train) %>%
+  step_novel(age_of_applicant_or_borrower) %>%
+  
+  step_rm(id) %>%
+  
+  step_rm(legal_entity_identifier_lei) %>%
+  
+  # unique(test$activity_year)  unique(train$activity_year) 2018
+  step_rm(activity_year) %>%
+  
+  step_mutate(loan_type = factor(loan_type, levels = c("1", "2", "3", "4"))) %>%
+  
+  step_mutate(loan_purpose = factor(loan_purpose, levels = c("1", "2", "31", "32", "4", "5"))) %>%
+  
+  # unique(train$preapproval) unique(test$preapproval)  2
+  step_rm(preapproval) %>%
+  
+  step_mutate(construction_method = factor(construction_method, levels = c("1", "2")),
+              occupancy_type = factor(occupancy_type, levels = c("1", "2", "3"))) %>%
+  
+  # contain NA value impossible to impute
+  step_rm(state) %>%
+  
+  step_mutate(ethnicity_of_applicant_or_borrower_1 = factor(ethnicity_of_applicant_or_borrower_1, levels = c("1", "11", "12", "13", "14", "2", "3", "4"))) %>%
+    
+  step_mutate(ethnicity_of_co_applicant_or_co_borrower_1 = factor(ethnicity_of_co_applicant_or_co_borrower_1, levels = c("1", "11", "12", "13", "14", "2", "3", "4"))) %>%
+
+  # impute nominal variable by most common values
+  step_impute_mode(ethnicity_of_applicant_or_borrower_1, ethnicity_of_co_applicant_or_co_borrower_1) %>%
+  
+  step_rm(ethnicity_of_applicant_or_borrower_2) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_3) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_4) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_5) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_2) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_3) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_4) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_5) %>%
+  
+  step_mutate(ethnicity_of_applicant_or_borrower_collected_on_the_basis_of_visual_observation_or_surname = factor(ethnicity_of_applicant_or_borrower_collected_on_the_basis_of_visual_observation_or_surname, levels = c("1", "2", "3"))) %>%
+  
+  step_mutate(ethnicity_of_co_applicant_or_co_borrower_collected_on_the_basis_of_visual_observation_or_surname = factor(ethnicity_of_co_applicant_or_co_borrower_collected_on_the_basis_of_visual_observation_or_surname, levels = c("1", "2", "3", "4"))) %>%
+  
+  step_mutate(race_of_applicant_or_borrower_1 = factor(race_of_applicant_or_borrower_1, levels = c("1", "2", "21", "22", "23", "24", "25", "26", "27", "3", "4", "41", "42", "43", "44", "5", "6", "7"))) %>%
+  
+  step_mutate(race_of_co_applicant_or_co_borrower_1 = factor(race_of_co_applicant_or_co_borrower_1, levels = c("1", "2", "21", "22", "23", "24", "25", "26", "27", "3", "4", "41", "42", "43", "44", "5", "6", "7"))) %>%
+  
+  step_impute_mode(race_of_applicant_or_borrower_1, race_of_co_applicant_or_co_borrower_1) %>%
+  
+  step_rm(race_of_applicant_or_borrower_2, race_of_applicant_or_borrower_3,
+          race_of_applicant_or_borrower_4, race_of_applicant_or_borrower_5,
+          race_of_co_applicant_or_co_borrower_2, race_of_co_applicant_or_co_borrower_3,
+          race_of_co_applicant_or_co_borrower_4, race_of_co_applicant_or_co_borrower_5) %>%
+  
+  step_mutate(race_of_applicant_or_borrower_collected_on_the_basis_of_visual_observation_or_surname = factor(race_of_applicant_or_borrower_collected_on_the_basis_of_visual_observation_or_surname, levels = c("1", "2", "3"))) %>%
+  
+  step_mutate(race_of_co_applicant_or_co_borrower_collected_on_the_basis_of_visual_observation_or_surname = factor(race_of_co_applicant_or_co_borrower_collected_on_the_basis_of_visual_observation_or_surname, levels = c("1", "2", "3", "4"))) %>%
+  
+  step_mutate(sex_of_applicant_or_borrower = factor(sex_of_applicant_or_borrower, levels = c("1", "2", "3", "4", "6"))) %>%
+  
+  step_mutate(sex_of_co_applicant_or_co_borrower = factor(sex_of_co_applicant_or_co_borrower, levels = c("1", "2", "3", "4", "5", "6"))) %>%
+  
+  step_mutate(sex_of_applicant_or_borrower_collected_on_the_basis_of_visual_observation_or_surname = factor(sex_of_applicant_or_borrower_collected_on_the_basis_of_visual_observation_or_surname, levels = c("1", "2", "3"))) %>%
+  
+  step_mutate(sex_of_co_applicant_or_co_borrower_collected_on_the_basis_of_visual_observation_or_surname = factor(sex_of_co_applicant_or_co_borrower_collected_on_the_basis_of_visual_observation_or_surname, levels = c("1", "2", "3", "4"))) %>%
+  
+  step_impute_mode(age_of_applicant_62, age_of_co_applicant_62) %>%
+  
+  step_impute_mean(income) %>%
+  
+  step_mutate(hoepa_status = factor(hoepa_status, levels = c("1", "2", "3"))) %>%
+  
+  step_mutate(lien_status = factor(lien_status, levels = c("1", "2"))) %>%
+  
+  step_mutate(applicant_or_borrower_name_and_version_of_credit_scoring_model = factor(applicant_or_borrower_name_and_version_of_credit_scoring_model)) %>%
+  
+  step_mutate(co_applicant_or_co_borrower_name_and_version_of_credit_scoring_model = factor(co_applicant_or_co_borrower_name_and_version_of_credit_scoring_model)) %>%
+  
+  step_rm(total_points_and_fees, prepayment_penalty_term) %>%
+  
+  step_impute_mean(combined_loan_to_value_ratio, loan_term) %>%
+  
+  step_rm(introductory_rate_period) %>%
+  
+  step_mutate(balloon_payment = factor(balloon_payment),
+              interest_only_payments = factor(interest_only_payments),
+              negative_amortization = factor(negative_amortization),
+              other_non_amortizing_features = factor(other_non_amortizing_features)) %>%
+  
+  step_impute_mean(property_value) %>%
+  
+  step_mutate(manufactured_home_secured_property_type = factor(manufactured_home_secured_property_type),
+              manufactured_home_land_property_interest = factor(manufactured_home_land_property_interest)) %>%
+  
+  step_mutate(total_units = factor(total_units)) %>%
+  
+  step_rm(multifamily_affordable_units) %>%
+  
+  step_mutate(submission_of_application = factor(submission_of_application),
+              initially_payable_to_your_institution = factor(initially_payable_to_your_institution),
+              automated_underwriting_system_1 = factor(automated_underwriting_system_1)) %>%
+  
+  # too many NA values
+  step_rm(automated_underwriting_system_2, automated_underwriting_system_3,
+          automated_underwriting_system_4, automated_underwriting_system_5) %>%
+  
+  # unique(train$reverse_mortgage) unique(test$reverse_mortgage)  2
+  step_rm(reverse_mortgage) %>%
+  
+  step_mutate(open_end_line_of_credit = factor(open_end_line_of_credit),
+              business_or_commercial_purpose = factor(business_or_commercial_purpose)) %>%
+  
+  step_novel(negative_amortization, manufactured_home_secured_property_type)
+```
+
+# Create Recipe 3
+```{r}
+recipe <- recipe(action_taken ~ ., data = cleaned_train) %>%
+  # step_novel(age_of_applicant_or_borrower) %>%
+  
+  step_rm(id) %>%
+  
+  step_rm(legal_entity_identifier_lei) %>%
+  
+  # unique(test$activity_year)  unique(train$activity_year) 2018
+  step_rm(activity_year) %>%
+  
+  # unique(train$preapproval) unique(test$preapproval)  2
+  step_rm(preapproval) %>%
+  
+  # contain NA value impossible to impute
+  step_rm(state) %>%
+  
+  # impute nominal variable by most common values
+  # step_impute_mode(ethnicity_of_applicant_or_borrower_1, ethnicity_of_co_applicant_or_co_borrower_1) %>%
+  
+  step_rm(ethnicity_of_applicant_or_borrower_2) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_3) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_4) %>%
+  step_rm(ethnicity_of_applicant_or_borrower_5) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_2) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_3) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_4) %>%
+  step_rm(ethnicity_of_co_applicant_or_co_borrower_5) %>%
+  # step_impute_mode(race_of_applicant_or_borrower_1, race_of_co_applicant_or_co_borrower_1) %>%
+  
+  step_rm(race_of_applicant_or_borrower_2, race_of_applicant_or_borrower_3,
+          race_of_applicant_or_borrower_4, race_of_applicant_or_borrower_5,
+          race_of_co_applicant_or_co_borrower_2, race_of_co_applicant_or_co_borrower_3,
+          race_of_co_applicant_or_co_borrower_4, race_of_co_applicant_or_co_borrower_5) %>%
+  
+  step_impute_mode(age_of_applicant_62, age_of_co_applicant_62) %>%
+  
+  step_impute_mean(income) %>%
+  
+  step_rm(total_points_and_fees, prepayment_penalty_term) %>%
+  
+  step_impute_mean(combined_loan_to_value_ratio, loan_term) %>%
+  
+  step_rm(introductory_rate_period) %>%
+  
+  step_impute_mean(property_value) %>%
+  
+  step_rm(multifamily_affordable_units) %>%
+  
+  # too many NA values
+  step_rm(automated_underwriting_system_2, automated_underwriting_system_3,
+          automated_underwriting_system_4, automated_underwriting_system_5) %>%
+  
+  step_dummy(all_factor_predictors(), one_hot = TRUE)
+```
+
+# boosted tree
+```{r}
+set.seed(666666)
+
+boost_tree_model<- boost_tree(
+  trees = tune(), 
+  min_n = tune(), 
+  tree_depth = tune(),
+  learn_rate = tune(), 
+  loss_reduction = tune(), 
+  sample_size = tune(),
+  stop_iter = tune()
+) %>%
+  set_engine("xgboost") %>% 
+  set_mode("classification")
+
+boost_tree_workflow <- workflow() %>% 
+  add_model(boost_tree_model) %>% 
+  add_recipe(recipe, blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+model_param = extract_parameter_set_dials(boost_tree_workflow)
+
+# set up the tuned grid
+boost_tune <- boost_tree_workflow %>%
+  tune_grid(train_folds,
+            grid = model_param %>% grid_random(size = 25))
+
+# generate plot and show best models
+autoplot(boost_tune)
+
+show_best(boost_tune)
+
+#boost_tree_crossval_fit <- boost_tree_workflow %>% 
+  #fit_resamples(resamples = train_folds)
+
+# logistic_rmse = logistic_crossval_fit %>% collect_metrics() %>% filter(.metric == "rmse")
+#boost_tree_crossval_fit %>% collect_metrics()
+```
+
+
+# logistic linear regression
+```{r}
+logistic_model<- logistic_reg() %>%
+  set_engine("glm") %>% 
+  set_mode("classification")
+
+logistic_workflow <- workflow() %>% 
+  add_model(logistic_model) %>% 
+  add_recipe(recipe, blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+logistic_crossval_fit <- logistic_workflow %>% 
+  fit_resamples(resamples = train_folds)
+
+# logistic_rmse = logistic_crossval_fit %>% collect_metrics() %>% filter(.metric == "rmse")
+logistic_crossval_fit %>% collect_metrics()
+```
+
+# knn
+```{r eval = FALSE}
+knn_model<- nearest_neighbor() %>% 
+  set_engine("kknn") %>% 
+  set_mode("classification")
+
+knn_workflow <- workflow() %>% 
+  add_model(knn_model) %>% 
+  add_recipe(recipe, blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+knn_crossval_fit <- knn_workflow %>% 
+  fit_resamples(resamples = train_folds)
+
+# knn_rmse = knn_crossval_fit %>% collect_metrics() %>% filter(.metric == "rmse")
+knn_crossval_fit %>% collect_metrics()
+```
+
+# random forest
+```{r eval = FALSE}
+rf_model<- rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+rf_workflow <- workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(recipe, blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+rf_crossval_fit <- rf_workflow %>% 
+  fit_resamples(resamples = train_folds)
+
+# rf_rmse = rf_crossval_fit %>% collect_metrics() %>% filter(.metric == "rmse")
+rf_crossval_fit %>% collect_metrics()
+```
+
+# random forest
+```{r eval = FALSE}
+rf_model<- rand_forest(
+  trees = tune(),
+  min_n = tune()) %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+rf_workflow <- workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(recipe, blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+model_param = extract_parameter_set_dials(rf_workflow)
+
+train_folds <- vfold_cv(train, v=2, strata = 'action_taken')
+
+# set up the tuned grid
+rf_tune <- rf_workflow %>%
+  tune_grid(train_folds,
+            grid = model_param %>% grid_random(size = 10))
+
+# generate plot and show best models
+autoplot(rf_tune)
+
+show_best(rf_tune)
+
+# save tuned results as rds file for future use
+saveRDS(rf_tune, "rf_tune")
+```
+
+# decsion tree baseline
+```{r eval = FALSE}
+dec_tr_model<- decision_tree() %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+
+dec_tr_workflow <- workflow() %>% 
+  add_model(dec_tr_model) %>% 
+  add_recipe(recipe)
+
+dec_tr_crossval_fit <- dec_tr_workflow %>% 
+  fit_resamples(resamples = train_folds)
+
+# dec_tr_rmse = dec_tr_crossval_fit %>% collect_metrics() %>% filter(.metric == "rmse")
+dec_tr_crossval_fit %>% collect_metrics()
+```
